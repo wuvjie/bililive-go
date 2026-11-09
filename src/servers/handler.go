@@ -1519,13 +1519,26 @@ func getPlatformStats(writer http.ResponseWriter, r *http.Request) {
 			liveId = string(types.LiveID(utils.GetMd5String([]byte(parsedUrl.Host + parsedUrl.Path))))
 		}
 
+		resolved := cfg.ResolveConfigForRoom(&room, platformKey)
 		roomInfo := map[string]interface{}{
-			"url":          room.Url,
-			"is_listening": room.IsListening,
-			"quality":      room.Quality,
-			"audio_only":   room.AudioOnly,
-			"nick_name":    room.NickName,
-			"live_id":      liveId,
+			"url":                           room.Url,
+			"is_listening":                  room.IsListening,
+			"quality":                       room.Quality,
+			"audio_only":                    room.AudioOnly,
+			"notify_only":                   room.NotifyOnly,
+			"nick_name":                     room.NickName,
+			"live_id":                       liveId,
+			"interval":                      room.Interval,
+			"out_put_path":                  room.OutPutPath,
+			"ffmpeg_path":                   room.FfmpegPath,
+			"out_put_tmpl":                  room.OutputTmpl,
+			"max_record_duration":           room.MaxRecordDuration,
+			"stream_preference":             room.StreamPreference,
+			"feature":                       room.Feature,
+			"effective_interval":            resolved.Interval,
+			"effective_out_put_path":        resolved.OutPutPath,
+			"effective_ffmpeg_path":         resolved.FfmpegPath,
+			"effective_max_record_duration": resolved.MaxRecordDuration,
 			"room_config": map[string]interface{}{
 				"danmaku_enable": room.DanmakuEnable,
 				"danmaku":        room.Danmaku,
@@ -1602,6 +1615,10 @@ func getPlatformStats(writer http.ResponseWriter, r *http.Request) {
 			"warning_message":         warningMessage,
 			"out_put_path":            platformConfig.OutPutPath,
 			"ffmpeg_path":             platformConfig.FfmpegPath,
+			"out_put_tmpl":            platformConfig.OutputTmpl,
+			"max_record_duration":     platformConfig.MaxRecordDuration,
+			"stream_preference":       platformConfig.StreamPreference,
+			"feature":                 platformConfig.Feature,
 		})
 		processedPlatforms[platformKey] = true
 	}
@@ -1649,6 +1666,10 @@ func getPlatformStats(writer http.ResponseWriter, r *http.Request) {
 			"interval":                platformConfig.Interval,
 			"out_put_path":            platformConfig.OutPutPath,
 			"ffmpeg_path":             platformConfig.FfmpegPath,
+			"out_put_tmpl":            platformConfig.OutputTmpl,
+			"max_record_duration":     platformConfig.MaxRecordDuration,
+			"stream_preference":       platformConfig.StreamPreference,
+			"feature":                 platformConfig.Feature,
 		})
 		processedPlatforms[platformKey] = true
 	}

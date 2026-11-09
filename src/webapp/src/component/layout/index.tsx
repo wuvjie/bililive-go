@@ -10,7 +10,7 @@ import {
     ToolOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
-    LineChartOutlined,
+    BarChartOutlined,
     CloudUploadOutlined,
     CalendarOutlined,
     CommentOutlined
@@ -146,7 +146,7 @@ class RootLayout extends React.Component<Props, State> {
                                     },
                                     ...(ENABLE_IO_STATS_UI ? [{
                                         key: 'iostats',
-                                        icon: <LineChartOutlined />,
+                                        icon: <BarChartOutlined />,
                                         label: <Link to="/iostats">IO 统计</Link>,
                                     }] : []),
                                     {
