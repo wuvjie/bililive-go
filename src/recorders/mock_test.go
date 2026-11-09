@@ -181,6 +181,20 @@ func (mr *MockRecorderMockRecorder) StartTime() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartTime", reflect.TypeOf((*MockRecorder)(nil).StartTime))
 }
 
+// SessionStartTime mocks base method.
+func (m *MockRecorder) SessionStartTime() time.Time {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SessionStartTime")
+	ret0, _ := ret[0].(time.Time)
+	return ret0
+}
+
+// SessionStartTime indicates an expected call of SessionStartTime.
+func (mr *MockRecorderMockRecorder) SessionStartTime() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SessionStartTime", reflect.TypeOf((*MockRecorder)(nil).SessionStartTime))
+}
+
 // MockManager is a mock of Manager interface.
 type MockManager struct {
 	ctrl     *gomock.Controller

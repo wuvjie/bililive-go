@@ -4,6 +4,7 @@ import (
 	"os"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bililive-go/bililive-go/src/pkg/ratelimit"
 	"github.com/bililive-go/bililive-go/src/types"
@@ -430,4 +431,94 @@ func intPtr(i int) *int {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+func durationPtr(d time.Duration) *time.Duration {
+	return &d
+}
+
+func TestConfig_MaxRecordDuration_Inheritance(t *testing.T) {
+	globalDur := 2 * time.Hour
+	platformDur := 1 * time.Hour
+	roomDur := 30 * time.Minute
+
+	cfg := &Config{
+		MaxRecordDuration: globalDur,
+		PlatformConfigs: map[string]PlatformConfig{
+			"douyin": {
+				OverridableConfig: OverridableConfig{
+					MaxRecordDuration: durationPtr(platformDur),
+				},
+			},
+			"bilibili": {
+				OverridableConfig: OverridableConfig{},
+			},
+		},
+	}
+
+	// 1. 房间级别覆盖：roomDur 优先于 platform 和 global
+	roomWithOverride := &LiveRoom{
+		Url: "https://live.douyin.com/111",
+		OverridableConfig: OverridableConfig{
+			MaxRecordDuration: durationPtr(roomDur),
+		},
+	}
+	res1 := cfg.ResolveConfigForRoom(roomWithOverride, "douyin")
+	assert.Equal(t, roomDur, res1.MaxRecordDuration)
+
+	// 2. 平台级别覆盖：无房间覆盖时，继承 platformDur
+	roomWithPlatformInherit := &LiveRoom{
+		Url: "https://live.douyin.com/222",
+	}
+	res2 := cfg.ResolveConfigForRoom(roomWithPlatformInherit, "douyin")
+	assert.Equal(t, platformDur, res2.MaxRecordDuration)
+
+	// 3. 全局级别继承：平台无覆盖且房间无覆盖时，继承 globalDur
+	roomWithGlobalInherit := &LiveRoom{
+		Url: "https://live.bilibili.com/333",
+	}
+	res3 := cfg.ResolveConfigForRoom(roomWithGlobalInherit, "bilibili")
+	assert.Equal(t, globalDur, res3.MaxRecordDuration)
+}
+
+func TestConfig_MaxRecordDuration_Verify(t *testing.T) {
+	cfg := &Config{
+		RPC:               defaultRPC,
+		Interval:          30,
+		OutPutPath:        os.TempDir(),
+		Danmaku:           defaultDanmakuConfig,
+		MaxRecordDuration: -1 * time.Second,
+	}
+	assert.Error(t, cfg.Verify(), "全局 MaxRecordDuration 为负数时应返回错误")
+
+	cfg.MaxRecordDuration = 0
+	assert.NoError(t, cfg.Verify())
+
+	cfg.PlatformConfigs = map[string]PlatformConfig{
+		"douyin": {
+			OverridableConfig: OverridableConfig{
+				MaxRecordDuration: durationPtr(-5 * time.Second),
+			},
+		},
+	}
+	assert.Error(t, cfg.ValidatePlatformConfigs(), "平台级 MaxRecordDuration 为负数时应返回错误")
+}
+
+func TestConfig_MaxRecordDuration_YamlParsing(t *testing.T) {
+	cfgYaml := `
+rpc:
+  enable: true
+  bind: :8080
+interval: 20
+out_put_path: ./
+max_record_duration: 1h30m
+platform_configs:
+  douyin:
+    max_record_duration: 45m
+`
+	cfg, err := NewConfigWithBytes([]byte(cfgYaml))
+	assert.NoError(t, err)
+	assert.Equal(t, 90*time.Minute, cfg.MaxRecordDuration)
+	assert.NotNil(t, cfg.PlatformConfigs["douyin"].MaxRecordDuration)
+	assert.Equal(t, 45*time.Minute, *cfg.PlatformConfigs["douyin"].MaxRecordDuration)
 }

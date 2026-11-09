@@ -568,6 +568,7 @@ type OverridableConfig struct {
 	OnRecordFinished     *OnRecordFinished     `yaml:"on_record_finished,omitempty" json:"on_record_finished,omitempty"`         // 录制完成后的动作
 	TimeoutInUs          *int                  `yaml:"timeout_in_us,omitempty" json:"timeout_in_us,omitempty"`                   // 超时设置(微秒)
 	StreamPreference     *StreamPreference     `yaml:"stream_preference,omitempty" json:"stream_preference,omitempty"`           // 流偏好配置
+	MaxRecordDuration    *time.Duration        `yaml:"max_record_duration,omitempty" json:"max_record_duration,omitempty"`
 	DanmakuEnable        *bool                 `yaml:"danmaku_enable,omitempty" json:"danmaku_enable,omitempty"`                 // 是否录制弹幕（支持哔哩哔哩、抖音、斗鱼）
 	Danmaku              *DanmakuConfig        `yaml:"danmaku,omitempty" json:"danmaku,omitempty"`                               // 弹幕录制参数
 }
@@ -646,6 +647,7 @@ type Config struct {
 	Log                  Log                  `yaml:"log" json:"log"`
 	Feature              Feature              `yaml:"feature" json:"feature"`
 	OutputTmpl           string               `yaml:"out_put_tmpl" json:"out_put_tmpl"`
+	MaxRecordDuration     time.Duration          `yaml:"max_record_duration" json:"max_record_duration"`
 	VideoSplitStrategies VideoSplitStrategies `yaml:"video_split_strategies" json:"video_split_strategies"`
 	OnRecordFinished     OnRecordFinished     `yaml:"on_record_finished" json:"on_record_finished"`
 	TimeoutInUs          int                  `yaml:"timeout_in_us" json:"timeout_in_us"`
@@ -1351,6 +1353,9 @@ func (c *Config) Verify() error {
 	if c.Interval <= 0 {
 		return fmt.Errorf("检测间隔必须大于 0")
 	}
+	if c.MaxRecordDuration < 0 {
+		return fmt.Errorf("单场录制时长不能为负数")
+	}
 	if _, err := os.Stat(c.OutPutPath); err != nil {
 		return fmt.Errorf(`输出路径 "%s" 不存在`, c.OutPutPath)
 	}
@@ -1690,6 +1695,7 @@ func maskProxyURL(rawURL string) string {
 func (c *Config) ResolveConfigForRoom(room *LiveRoom, platformName string) ResolvedConfig {
 	resolved := ResolvedConfig{
 		Interval:             c.Interval,
+		MaxRecordDuration:    c.MaxRecordDuration,
 		OutPutPath:           c.OutPutPath,
 		FfmpegPath:           c.FfmpegPath,
 		Log:                  c.Log,
@@ -1771,6 +1777,7 @@ type ResolvedConfig struct {
 	OnRecordFinished     OnRecordFinished     `json:"on_record_finished"`
 	TimeoutInUs          int                  `json:"timeout_in_us"`
 	StreamPreference     StreamPreference     `json:"stream_preference"`
+	MaxRecordDuration    time.Duration
 	DanmakuEnable        bool                 `json:"danmaku_enable"`
 	Danmaku              DanmakuConfig        `json:"danmaku"`
 }
@@ -1806,6 +1813,9 @@ func (r *ResolvedConfig) applyOverrides(override *OverridableConfig) {
 	}
 	if override.StreamPreference != nil {
 		r.StreamPreference = *MergeStreamPreference(&r.StreamPreference, override.StreamPreference)
+	}
+	if override.MaxRecordDuration != nil {
+		r.MaxRecordDuration = *override.MaxRecordDuration
 	}
 	if override.DanmakuEnable != nil {
 		r.DanmakuEnable = *override.DanmakuEnable
@@ -2034,6 +2044,9 @@ func (c *Config) ValidatePlatformConfigs() error {
 		// 验证最小访问间隔
 		if platformConfig.MinAccessIntervalSec < 0 {
 			return fmt.Errorf("平台 '%s': 最小访问间隔不能为负数", platformKey)
+		}
+		if platformConfig.MaxRecordDuration != nil && *platformConfig.MaxRecordDuration < 0 {
+			return fmt.Errorf("平台 '%s': 单场录制时长不能为负数", platformKey)
 		}
 
 		// 验证路径（如果指定）

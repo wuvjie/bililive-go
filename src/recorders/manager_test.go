@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	gomock "go.uber.org/mock/gomock"
@@ -170,4 +171,77 @@ func TestRestartRecorderRaceWithLiveEnd(t *testing.T) {
 	// 验证 HasRecorder 在锁释放后应返回 true（说明它等到了 restart 完成，而不是看到中间状态 false）
 	assert.True(t, hasRecorderResult,
 		"HasRecorder 应在 RestartRecorder 完成后返回 true，说明锁正确阻止了中间状态暴露")
+}
+
+func TestManagerCronStop(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cfg := &configs.Config{
+		MaxRecordDuration: 50 * time.Millisecond,
+	}
+	configs.SetCurrentConfig(cfg)
+	ctx := context.WithValue(context.Background(), instance.Key, &instance.Instance{})
+	mgr := NewManager(ctx)
+
+	r := NewMockRecorder(ctrl)
+	r.EXPECT().Start(gomock.Any()).Return(nil)
+	r.EXPECT().SessionStartTime().Return(time.Now()).AnyTimes()
+	r.EXPECT().Close()
+
+	backup := newRecorder
+	newRecorder = func(ctx context.Context, l live.Live) (Recorder, error) {
+		return r, nil
+	}
+	defer func() { newRecorder = backup }()
+
+	l := livemock.NewMockLive(ctrl)
+	l.EXPECT().GetLiveId().Return(types.LiveID("test_cron_stop")).AnyTimes()
+	l.EXPECT().GetLogger().Return(livelogger.New(0, nil)).AnyTimes()
+	l.EXPECT().GetConfig().Return(&configs.LiveRoom{Url: "http://example.com/test"}).AnyTimes()
+	l.EXPECT().GetPlatformKey().Return("douyin").AnyTimes()
+
+	assert.NoError(t, mgr.AddRecorder(ctx, l))
+	assert.True(t, mgr.HasRecorder(ctx, "test_cron_stop"))
+
+	assert.Eventually(t, func() bool {
+		return !mgr.HasRecorder(ctx, "test_cron_stop")
+	}, 1*time.Second, 10*time.Millisecond, "录制达到最大时长后应自动停止并被移除")
+}
+
+func TestManagerCronStop_Disabled(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	cfg := &configs.Config{
+		MaxRecordDuration: 0, // 不限制
+	}
+	configs.SetCurrentConfig(cfg)
+	ctx := context.WithValue(context.Background(), instance.Key, &instance.Instance{})
+	mgr := NewManager(ctx)
+
+	r := NewMockRecorder(ctrl)
+	r.EXPECT().Start(gomock.Any()).Return(nil)
+	r.EXPECT().Close()
+
+	backup := newRecorder
+	newRecorder = func(ctx context.Context, l live.Live) (Recorder, error) {
+		return r, nil
+	}
+	defer func() { newRecorder = backup }()
+
+	l := livemock.NewMockLive(ctrl)
+	l.EXPECT().GetLiveId().Return(types.LiveID("test_disabled")).AnyTimes()
+	l.EXPECT().GetLogger().Return(livelogger.New(0, nil)).AnyTimes()
+	l.EXPECT().GetConfig().Return(&configs.LiveRoom{Url: "http://example.com/test"}).AnyTimes()
+	l.EXPECT().GetPlatformKey().Return("douyin").AnyTimes()
+
+	assert.NoError(t, mgr.AddRecorder(ctx, l))
+	assert.True(t, mgr.HasRecorder(ctx, "test_disabled"))
+
+	time.Sleep(50 * time.Millisecond)
+	assert.True(t, mgr.HasRecorder(ctx, "test_disabled"), "MaxRecordDuration 为 0 时不应自动停止")
+
+	assert.NoError(t, mgr.RemoveRecorder(ctx, "test_disabled"))
+	assert.False(t, mgr.HasRecorder(ctx, "test_disabled"))
 }

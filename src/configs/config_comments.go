@@ -32,6 +32,9 @@ func DecorateConfigNode(node *yaml.Node) {
 # 负数为非法值，程序会输出 log 提醒，并无视所设定的数值`, "")
 	}
 
+	setFieldComment(root, "max_record_duration",
+		`# 单场直播最大录制时长，支持 30m, 1h 等格式，0 为不限制（录至下播）`, "")
+
 	setFieldHeadComment(root, "notify", "# 通知服务配置")
 	notifyNode := findNode(root, "notify")
 	if notifyNode != nil {

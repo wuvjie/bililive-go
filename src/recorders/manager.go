@@ -205,7 +205,16 @@ func (m *manager) addRecorderLocked(ctx context.Context, live live.Live) error {
 
 	cfg := configs.GetCurrentConfig()
 	if cfg != nil {
-		if maxDur := cfg.VideoSplitStrategies.MaxDuration; maxDur != 0 {
+		platformKey := configs.GetPlatformKeyFromUrl(live.GetRawUrl())
+		room, _ := cfg.GetLiveRoomByUrl(live.GetRawUrl())
+		if room == nil {
+			room = &configs.LiveRoom{Url: live.GetRawUrl()}
+		}
+		resolved := cfg.ResolveConfigForRoom(room, platformKey)
+		if resolved.MaxRecordDuration > 0 {
+			bilisentry.GoWithContext(ctx, func(ctx context.Context) { m.cronStop(ctx, live, resolved.MaxRecordDuration) })
+		}
+		if maxDur := resolved.VideoSplitStrategies.MaxDuration; maxDur != 0 {
 			bilisentry.GoWithContext(ctx, func(ctx context.Context) { m.cronRestart(ctx, live) })
 		}
 	}
@@ -237,6 +246,61 @@ func (m *manager) cronRestart(ctx context.Context, live live.Live) {
 	}
 	if err := m.RestartRecorder(ctx, live); err != nil {
 		return
+	}
+}
+
+func (m *manager) cronStop(ctx context.Context, live live.Live, maxDuration time.Duration) {
+	recorder, err := m.GetRecorder(ctx, live.GetLiveId())
+	if err != nil {
+		return
+	}
+
+	// 动态复核配置（支持录制过程中动态调整限时或关闭限时）
+	cfg := configs.GetCurrentConfig()
+	if cfg != nil {
+		platformKey := configs.GetPlatformKeyFromUrl(live.GetRawUrl())
+		room, _ := cfg.GetLiveRoomByUrl(live.GetRawUrl())
+		if room == nil {
+			room = &configs.LiveRoom{Url: live.GetRawUrl()}
+		}
+		resolved := cfg.ResolveConfigForRoom(room, platformKey)
+		maxDuration = resolved.MaxRecordDuration
+		if maxDuration <= 0 {
+			// 用户将限时调整为 0（不限时），退出监控
+			return
+		}
+	}
+
+	sessionStart := recorder.SessionStartTime()
+	if sessionStart.IsZero() {
+		sessionStart = recorder.StartTime()
+	}
+	if sessionStart.IsZero() {
+		time.AfterFunc(5*time.Second, func() {
+			m.cronStop(ctx, live, maxDuration)
+		})
+		return
+	}
+
+	elapsed := time.Since(sessionStart)
+	if elapsed < maxDuration {
+		remaining := maxDuration - elapsed
+		checkInterval := remaining / 4
+		if checkInterval > 15*time.Second {
+			checkInterval = 15 * time.Second
+		}
+		if checkInterval < 500*time.Millisecond {
+			checkInterval = remaining
+		}
+		time.AfterFunc(checkInterval, func() {
+			m.cronStop(ctx, live, maxDuration)
+		})
+		return
+	}
+
+	live.GetLogger().Infof("直播间录制时长已达到设定的限制 (%v)，正在停止录制...", maxDuration)
+	if err := m.RemoveRecorder(ctx, live.GetLiveId()); err != nil && !errors.Is(err, ErrRecorderNotExist) {
+		live.GetLogger().Errorf("按时长限制停止录制失败: %v", err)
 	}
 }
 

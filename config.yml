@@ -19,6 +19,8 @@ feature:
 # ./平台名称/主播名字/[时间戳][主播名字][房间名字].flv
 # https://github.com/bililive-go/bililive-go/wiki/More-Tips
 out_put_tmpl: ""
+# 单场直播最大录制时长，支持 30m, 1h 等格式，0 为不限制（录至下播）
+max_record_duration: 0s
 video_split_strategies:
   on_room_name_changed: false
   max_duration: 0s

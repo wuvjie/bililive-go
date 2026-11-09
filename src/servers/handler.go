@@ -254,7 +254,8 @@ func getLive(writer http.ResponseWriter, r *http.Request) {
 		"platform_key":          platformKey,
 		"effective_interval":    resolvedConfig.Interval,
 		"effective_out_path":    resolvedConfig.OutPutPath,
-		"effective_ffmpeg_path": resolvedConfig.FfmpegPath,
+		"effective_ffmpeg_path":        resolvedConfig.FfmpegPath,
+		"effective_max_record_duration": resolvedConfig.MaxRecordDuration,
 		"quality":               room.Quality,
 		"audio_only":            room.AudioOnly,
 
@@ -274,7 +275,8 @@ func getLive(writer http.ResponseWriter, r *http.Request) {
 		"config_sources": map[string]string{
 			"interval":     getConfigSource(cfg, *room, platformKey, "interval"),
 			"out_put_path": getConfigSource(cfg, *room, platformKey, "out_put_path"),
-			"ffmpeg_path":  getConfigSource(cfg, *room, platformKey, "ffmpeg_path"),
+			"ffmpeg_path":         getConfigSource(cfg, *room, platformKey, "ffmpeg_path"),
+			"max_record_duration": getConfigSource(cfg, *room, platformKey, "max_record_duration"),
 		},
 
 		// 运行时信息 - 连接统计
@@ -346,6 +348,10 @@ func getConfigSource(config *configs.Config, room configs.LiveRoom, platformKey,
 		if room.OutPutPath != nil {
 			return "room"
 		}
+	case "max_record_duration":
+		if room.MaxRecordDuration != nil {
+			return "room"
+		}
 	case "ffmpeg_path":
 		if room.FfmpegPath != nil {
 			return "room"
@@ -361,6 +367,10 @@ func getConfigSource(config *configs.Config, room configs.LiveRoom, platformKey,
 			}
 		case "out_put_path":
 			if platformConfig.OutPutPath != nil {
+				return "platform"
+			}
+		case "max_record_duration":
+			if platformConfig.MaxRecordDuration != nil {
 				return "platform"
 			}
 		case "ffmpeg_path":
@@ -1987,6 +1997,17 @@ func applyConfigUpdates(c *configs.Config, updates map[string]interface{}) error
 		}
 	}
 
+	// 处理单场录制时长限制
+	if maxRecordDur, ok := updates["max_record_duration"].(float64); ok {
+		c.MaxRecordDuration = time.Duration(int64(maxRecordDur))
+	} else if maxRecordDurSec, ok := updates["max_record_duration_seconds"].(float64); ok {
+		c.MaxRecordDuration = time.Duration(int64(maxRecordDurSec * float64(time.Second)))
+	} else if maxRecordDurStr, ok := updates["max_record_duration"].(string); ok {
+		if d, err := time.ParseDuration(maxRecordDurStr); err == nil {
+			c.MaxRecordDuration = d
+		}
+	}
+
 	// 处理录制完成后动作
 	if orf, ok := updates["on_record_finished"].(map[string]interface{}); ok {
 		if convertToMp4, ok := orf["convert_to_mp4"].(bool); ok {
@@ -2471,6 +2492,23 @@ func applyOverridableConfigUpdates(oc *configs.OverridableConfig, updates map[st
 	if timeoutSec, ok := updates["timeout_in_seconds"].(float64); ok {
 		val := int(timeoutSec * 1000000)
 		oc.TimeoutInUs = &val
+	}
+
+	// 处理单场录制时长限制
+	if maxRecordDur, ok := updates["max_record_duration"].(float64); ok {
+		val := time.Duration(int64(maxRecordDur))
+		oc.MaxRecordDuration = &val
+	} else if maxRecordDurSec, ok := updates["max_record_duration_seconds"].(float64); ok {
+		val := time.Duration(int64(maxRecordDurSec * float64(time.Second)))
+		oc.MaxRecordDuration = &val
+	} else if maxRecordDurStr, ok := updates["max_record_duration"].(string); ok {
+		if maxRecordDurStr == "" {
+			oc.MaxRecordDuration = nil
+		} else if d, err := time.ParseDuration(maxRecordDurStr); err == nil {
+			oc.MaxRecordDuration = &d
+		}
+	} else if _, exists := updates["max_record_duration"]; exists && updates["max_record_duration"] == nil {
+		oc.MaxRecordDuration = nil
 	}
 
 	// 处理 feature 配置（包括 downloader_type）

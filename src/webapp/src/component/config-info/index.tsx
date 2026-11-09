@@ -68,6 +68,7 @@ interface EffectiveConfig {
     remove_symbol_other_character: boolean;
   };
   out_put_tmpl: string;
+  max_record_duration?: number;
   default_out_put_tmpl: string;
   video_split_strategies: {
     on_room_name_changed: boolean;
@@ -177,6 +178,7 @@ interface PlatformStat {
   warning_message?: string;
   out_put_path?: string;
   ffmpeg_path?: string;
+  max_record_duration?: number;
 }
 
 interface PlatformStatsResponse {
@@ -384,6 +386,7 @@ const GlobalSettings: React.FC<{
       // 转换 attributes: map -> array
       const displayConfig = {
         ...config,
+        max_record_duration: config.max_record_duration ? config.max_record_duration / 1000000000 : 0,
         video_split_strategies: config.video_split_strategies ? {
           ...config.video_split_strategies,
           max_duration: config.video_split_strategies.max_duration / 1000000000
@@ -413,6 +416,7 @@ const GlobalSettings: React.FC<{
       }
       const updates = {
         ...values,
+        max_record_duration: values.max_record_duration != null ? (values.max_record_duration || 0) * 1000000000 : 0,
         video_split_strategies: values.video_split_strategies ? {
           ...values.video_split_strategies,
           max_duration: (values.video_split_strategies.max_duration || 0) * 1000000000
@@ -518,6 +522,16 @@ const GlobalSettings: React.FC<{
           <ConfigField label="超时时间 (秒)" description="网络请求超时时间">
             <Form.Item name="timeout_in_seconds" noStyle>
               <InputNumber min={1} max={300} style={{ width: 200 }} />
+            </Form.Item>
+          </ConfigField>
+          <ConfigField
+            label="单场录制时长限制 (秒)"
+            description="开播录制达到设定时长后自动停止本场录制，0 表示不限制（录制直到下播）"
+            id="global-max_record_duration"
+            valueDisplay={config.max_record_duration ? `${config.max_record_duration / 1000000000} 秒` : '不限制 (0)'}
+          >
+            <Form.Item name="max_record_duration" rules={[{ type: 'number', min: 0, message: '不能为负数' }]}>
+              <InputNumber min={0} placeholder="0 (不限制)" style={{ width: 200 }} />
             </Form.Item>
           </ConfigField>
         </Card>
@@ -1282,6 +1296,7 @@ const PlatformConfigForm: React.FC<{
       // 转换 attributes: map -> array
       const displayPlatform = {
         ...platform,
+        max_record_duration: (platform as any).max_record_duration != null ? (platform as any).max_record_duration / 1000000000 : undefined,
         stream_preference: (platform as any).stream_preference ? {
           ...(platform as any).stream_preference,
           attributes: (platform as any).stream_preference.attributes
@@ -1307,6 +1322,7 @@ const PlatformConfigForm: React.FC<{
       }
       const updatedValues = {
         ...values,
+        max_record_duration: values.max_record_duration != null && values.max_record_duration !== '' ? values.max_record_duration * 1000000000 : null,
         stream_preference: values.stream_preference ? {
           quality: values.stream_preference.quality || undefined,
           attributes: Object.keys(attributesMap).length > 0 ? attributesMap : undefined
@@ -1438,6 +1454,26 @@ const PlatformConfigForm: React.FC<{
               rows={2}
               placeholder={`继承全局: ${globalConfig?.default_out_put_tmpl}`}
               style={{ width: 500 }}
+            />
+          </Form.Item>
+        </ConfigField>
+
+        <ConfigField
+          label="单场录制时长限制 (秒)"
+          description="开播录制达到设定时长后自动停止录制，留空则继承全局设置"
+          inheritance={{
+            source: 'global',
+            linkTo: '/configInfo?tab=global#global-max_record_duration',
+            isOverridden: (platform as any).max_record_duration != null,
+            inheritedValue: globalConfig?.max_record_duration ? `${globalConfig.max_record_duration / 1000000000} 秒` : '不限制 (0)'
+          }}
+          id={`platforms-${platformKey}-max_record_duration`}
+        >
+          <Form.Item name="max_record_duration" rules={[{ type: 'number', min: 0, message: '不能为负数' }]}>
+            <InputNumber
+              min={0}
+              placeholder={`继承全局: ${globalConfig?.max_record_duration ? `${globalConfig.max_record_duration / 1000000000} 秒` : '不限制 (0)'}`}
+              style={{ width: 200 }}
             />
           </Form.Item>
         </ConfigField>
@@ -1639,6 +1675,7 @@ export const RoomConfigForm: React.FC<{
       // 转换 attributes: map -> array
       const displayRoom = {
         ...room,
+        max_record_duration: room.max_record_duration != null ? room.max_record_duration / 1000000000 : undefined,
         stream_preference: room.stream_preference ? {
           ...room.stream_preference,
           attributes: room.stream_preference.attributes
@@ -1663,6 +1700,7 @@ export const RoomConfigForm: React.FC<{
       }
       const updatedValues = {
         ...values,
+        max_record_duration: values.max_record_duration != null && values.max_record_duration !== '' ? values.max_record_duration * 1000000000 : null,
         stream_preference: values.stream_preference ? {
           quality: values.stream_preference.quality || undefined,
           attributes: Object.keys(attributesMap).length > 0 ? attributesMap : undefined
@@ -1819,6 +1857,35 @@ export const RoomConfigForm: React.FC<{
             rows={2}
             placeholder={`继承${(platformConfig as any)?.out_put_tmpl ? '平台' : '全局'}: ${(platformConfig as any)?.out_put_tmpl || globalConfig?.default_out_put_tmpl}`}
             style={{ width: 500 }}
+          />
+        </Form.Item>
+      </ConfigField>
+
+      <ConfigField
+        label="单场录制时长限制 (秒)"
+        description="开播录制达到设定时长后自动停止录制，留空则继承平台或全局设置"
+        inheritance={{
+          source: (platformConfig as any)?.max_record_duration != null ? 'platform' : 'global',
+          linkTo: (platformConfig as any)?.max_record_duration != null
+            ? `/configInfo?tab=platforms&platform=${platformKey}`
+            : '/configInfo?tab=global#global-max_record_duration',
+          isOverridden: room.max_record_duration != null,
+          inheritedValue: (() => {
+            const inheritedNs = (platformConfig as any)?.max_record_duration ?? globalConfig?.max_record_duration;
+            return inheritedNs ? `${inheritedNs / 1000000000} 秒` : '不限制 (0)';
+          })()
+        }}
+        effectiveValue={room.effective_max_record_duration ? `${room.effective_max_record_duration / 1000000000} 秒` : '不限制 (0)'}
+        id={`rooms-live-${room.live_id}-max_record_duration`}
+      >
+        <Form.Item name="max_record_duration" rules={[{ type: 'number', min: 0, message: '不能为负数' }]}>
+          <InputNumber
+            min={0}
+            placeholder={`继承${(platformConfig as any)?.max_record_duration != null ? '平台' : '全局'}: ${(() => {
+              const inheritedNs = (platformConfig as any)?.max_record_duration ?? globalConfig?.max_record_duration;
+              return inheritedNs ? `${inheritedNs / 1000000000} 秒` : '不限制 (0)';
+            })()}`}
+            style={{ width: 200 }}
           />
         </Form.Item>
       </ConfigField>

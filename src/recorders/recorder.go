@@ -237,6 +237,7 @@ func getDefaultFileNameTmpl() *template.Template {
 type Recorder interface {
 	Start(ctx context.Context) error
 	StartTime() time.Time
+	SessionStartTime() time.Time
 	GetStatus() (map[string]interface{}, error)
 	Close()
 	// GetParserPID 获取当前 parser 进程的 PID
@@ -316,7 +317,8 @@ type recorder struct {
 	Live       live.Live
 	ed         events.Dispatcher
 	cache      gcache.Cache
-	startTime  time.Time
+	startTime        time.Time
+	sessionStartTime time.Time
 	parser     parser.Parser
 	parserLock *sync.RWMutex
 	danmakuRec danmakuRecorder
@@ -387,7 +389,8 @@ func NewRecorder(ctx context.Context, live live.Live) (Recorder, error) {
 	return &recorder{
 		Live:            live,
 		cache:           inst.Cache,
-		startTime:       time.Now(),
+		startTime:        time.Now(),
+		sessionStartTime: time.Now(),
 		ed:              inst.EventDispatcher.(events.Dispatcher),
 		state:           begin,
 		stop:            make(chan struct{}),
@@ -1567,6 +1570,13 @@ func (r *recorder) StartTime() time.Time {
 	return r.startTime
 }
 
+func (r *recorder) SessionStartTime() time.Time {
+	if !r.sessionStartTime.IsZero() {
+		return r.sessionStartTime
+	}
+	return r.startTime
+}
+
 // IsRecording 返回当前是否正在实际录制
 // 判断标准：输出文件已创建且有实际数据写入（size > 0）
 // 仅有 parser（如 ffmpeg 进程）不代表真正在录制 —— ffmpeg 可能因为流 URL 404 等原因
@@ -1638,6 +1648,9 @@ func (r *recorder) TransferPipelineState(old *recorder) {
 	// 新 recorder 在 RestartRecorder 里先被 Start，等这里执行时它自己可能已经拉上过一次流，
 	// 无条件写入会把那份成功抹回旧实例的 false，让后续重试退回"从未录上过"的 60 秒长间隔。
 	// old 的 run() 已在 CloseForRestart 里等待退出，此处读旧值不会有并发写。
+	if !old.sessionStartTime.IsZero() {
+		r.sessionStartTime = old.sessionStartTime
+	}
 	if old.everHeldStream.Load() {
 		r.everHeldStream.Store(true)
 	}
